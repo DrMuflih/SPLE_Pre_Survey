@@ -111,7 +111,7 @@ textarea{width:100%;min-height:90px}
 /* ===== CONFIGURATION =====
    Paste your Google Apps Script web-app URL between the quotes.
    Leave it empty to run in test mode (nothing is saved). */
-const ENDPOINT = '';
+const ENDPOINT = 'https://script.google.com/macros/s/AKfycbxoTlkaHCMTzwq6Xmi3v_Fd8JPMfJFpe454DdLkT_KJIgXT_1-jofuMjlmGiGRj35sk/exec';
 /* ========================= */
 (function(){
 const F=document.getElementById('survey');
@@ -136,7 +136,7 @@ const USE5=["Not useful","Slightly","Moderately","Very","Extremely useful"];
 
 // A
 let s=sec('A','About this survey');
-s.insertAdjacentHTML('beforeend',`<p>IAU College of Clinical Pharmacy is designing a preparation course for the Saudi Pharmacist Licensure Examination (SPLE). We are asking pharmacists who have already taken the SPLE to describe the exam as they experienced it and to compare two possible course designs.</p><p>The survey takes about 15 minutes. It is anonymous: we do not ask for your name, university ID or contact details, and results are reported only in aggregate. Participation is voluntary and you can stop at any time. There are no right or wrong answers.</p>`);
+s.insertAdjacentHTML('beforeend',`<p>IAU College of Clinical Pharmacy is designing a preparation course for the Saudi Pharmacist Licensure Examination (SPLE). We are asking pharmacists who have already taken the SPLE to describe the exam as they experienced it and to compare two possible course designs.</p><p>The survey takes about 10 minutes. It is anonymous: we do not ask for your name, university ID or contact details, and results are reported only in aggregate. Participation is voluntary and you can stop at any time. There are no right or wrong answers.</p>`);
 single(s,'A1','I have read the information above and agree to take part.',['Yes','No']);
 
 // B
@@ -155,7 +155,6 @@ Q(s,'C4','How much do you agree with each statement about your exam?',matrix('C4
 
 // E
 s=sec('E','What a course should emphasise','Now answer about what you think a preparation course should do, which may differ from what you saw.');
-Q(s,'E1','How much course time should each module receive?',`<div class="scroll"><table><thead><tr><th>Code</th><th>Module</th><th>Course time</th></tr></thead><tbody>${MOD.map(m=>`<tr>${modCell(m)}<td>${sel('E1_'+m[0],['Brief review','Moderate','Substantial','Extensive'],'Course time')}</td></tr>`).join('')}</tbody></table></div>`);
 const modOpts=MOD.map(m=>m[0]+' · '+m[1]);
 Q(s,'E2','Rank the five modules where a course would help candidates most.',`<div class="rank">${[1,2,3,4,5].map(r=>`<label for="E2_${r}">Rank ${r}${r===1?' (most helpful)':''}</label>${sel('E2_'+r,modOpts,'Rank '+r)}`).join('')}</div>`);
 
