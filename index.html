@@ -92,6 +92,16 @@ textarea{width:100%;min-height:90px}
   .sum{grid-template-columns:1fr}
 }
 @media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+[hidden]{display:none!important}
+.nav{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.nav .spacer{flex:1}
+.nav .note{flex-basis:100%;order:5}
+.btn.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.req{font-weight:500;color:var(--warn);font-size:13px}
+form{display:flex;flex-direction:column;gap:18px}
+.qn{display:inline-block;font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-soft);border-radius:4px;padding:1px 5px;margin-right:4px;white-space:nowrap}
+td .qn{margin-bottom:2px}
 </style>
 </head>
 <body>
@@ -102,132 +112,143 @@ textarea{width:100%;min-height:90px}
     <h1>SPLE Graduate Survey</h1>
     <p class="preview" id="previewNote" hidden>Test mode: no response endpoint is set, so answers are not saved.</p>
   </section>
-  <div class="progress" aria-hidden="true"><span id="pct">0% answered</span><div class="bar"><i id="barfill"></i></div></div>
+  <div class="progress" id="progressWrap" aria-hidden="true"><span id="pct">Part A</span><div class="bar"><i id="barfill"></i></div></div>
   <form id="survey" novalidate></form>
-  <div class="done" id="done" hidden><h2>Thank you</h2><p id="doneMsg">Your response has been recorded. You can now close this page.</p></div>
+  <div class="done" id="done" hidden><h2>Thank you</h2><p id="doneMsg"></p></div>
 </main>
 
 <script>
 /* ===== CONFIGURATION =====
    Paste your Google Apps Script web-app URL between the quotes.
    Leave it empty to run in test mode (nothing is saved). */
-const ENDPOINT = 'https://script.google.com/macros/s/AKfycbxoTlkaHCMTzwq6Xmi3v_Fd8JPMfJFpe454DdLkT_KJIgXT_1-jofuMjlmGiGRj35sk/exec';
+const ENDPOINT = 'https://script.google.com/macros/s/AKfycbxJc62cw7PnS5RxGHePA3DNU6M8zHjea9Bs0A0R7bZqXInAEinaINGYNIOR14iuC25Q/exec';
 /* ========================= */
 (function(){
 const F=document.getElementById('survey');
-let qid=0;
-const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
-let partNo=0;
-const sec=(letter,title,note)=>{const s=document.createElement('section');s.className='sec';s.innerHTML=`<header><span class="eyebrow">Part ${++partNo}</span><h2>${title}</h2>${note?`<p class="note">${note}</p>`:''}</header>`;F.appendChild(s);return s};
-const pills=(name,opts,multi)=>`<div class="opts">${opts.map((o,i)=>`<label class="opt"><input type="${multi?'checkbox':'radio'}" name="${name}" id="${name}_${i}" value="${esc(o)}"><span>${esc(o)}</span></label>`).join('')}</div>`;
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+const strip=s=>String(s).replace(/<[^>]+>/g,'').replace(/&amp;/g,'&');
+let N=0; const nq=()=>'Q'+(++N);
+const PAGES=[];
+const sec=(letter,title,note)=>{const s=document.createElement('section');s.className='sec';s.dataset.part=letter;s.innerHTML=`<header><span class="eyebrow">Part ${letter}</span><h2>${title}</h2>${note?`<p class="note">${note}</p>`:''}</header>`;F.appendChild(s);PAGES.push(s);return s};
+const tag=q=>`<span class="qn">${q}</span>`;
 const Q=(s,code,label,body,extra='')=>{const d=document.createElement('div');d.className='q';d.innerHTML=`<div class="lab"><b>${code}</b>${label}</div>${extra}${body}`;s.appendChild(d);return d};
-const single=(s,code,label,opts,extra)=>Q(s,code,label,pills(code,opts),extra);
-const multi=(s,code,label,opts,extra)=>Q(s,code,label,pills(code,opts,true),extra);
-const matrix=(name,rows,cols,first='Statement')=>`<div class="scroll"><table><thead><tr><th>${first}</th>${cols.map(c=>`<th style="text-align:center">${c}</th>`).join('')}</tr></thead><tbody>${rows.map((r,i)=>`<tr><td>${r}</td>${cols.map((c,j)=>`<td class="c"><input class="dot" type="radio" name="${name}_${i}" id="${name}_${i}_${j}" value="${j}" aria-label="${esc(c)}"></td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
-const sumQ=(s,code,label,items)=>{const body=`<div class="sum">${items.map((it,i)=>`<label for="${code}_${i}">${it[0]}${it[1]?`<span class="d">${it[1]}</span>`:''}</label><input type="number" min="0" max="100" step="1" id="${code}_${i}" data-sum="${code}" inputmode="numeric">`).join('')}<span>Total</span><span class="total" id="${code}_tot">0 / 100</span></div>`;Q(s,code,label,body)};
+const pills=(q,opts,multi,cb)=>`<div class="opts" data-q="${q}" data-cb="${esc(cb)}" data-opts="${esc(opts.join(' | '))}">${opts.map((o,i)=>`<label class="opt"><input type="${multi?'checkbox':'radio'}" name="${q}" id="${q}_${i}" value="${esc(o)}"><span>${esc(o)}</span></label>`).join('')}</div>`;
+const single=(s,label,opts,extra)=>{const q=nq();return Q(s,q,label,pills(q,opts,false,strip(label)),extra)};
+const multi=(s,label,opts,extra)=>{const q=nq();return Q(s,q,label,pills(q,opts,true,strip(label)+' (multiple answers separated by ;)'),extra)};
+const range=(a,b)=>a===b?a:`${a}–${b}`;
+const matrix=(s,label,rows,cols,first)=>{const qs=rows.map(()=>nq());Q(s,range(qs[0],qs[qs.length-1]),label,`<div class="scroll"><table><thead><tr><th>${first}</th>${cols.map(c=>`<th style="text-align:center">${c}</th>`).join('')}</tr></thead><tbody>${rows.map((r,i)=>`<tr data-q="${qs[i]}" data-cb="${esc(strip(label)+' — '+strip(r))}" data-opts="${esc(cols.map(strip).join(' | '))}"><td>${tag(qs[i])} ${r}</td>${cols.map((c,j)=>`<td class="c"><input class="dot" type="radio" name="${qs[i]}" id="${qs[i]}_${j}" value="${esc(strip(c))}" aria-label="${esc(strip(c))}"></td>`).join('')}</tr>`).join('')}</tbody></table></div>`)};
+const sel=(q,opts,cb)=>`<select id="${q}" name="${q}" aria-label="${esc(cb)}" data-q="${q}" data-cb="${esc(cb)}" data-opts="${esc(opts.join(' | '))}"><option value="">—</option>${opts.map(o=>`<option>${esc(o)}</option>`).join('')}</select>`;
 
-const MOD=[["B0","Orientation and exam strategy","Exam format, time management"],["B1","Patient assessment, drug information and evidence","History, labs, drug-related problems, guidelines, counselling"],["B2","Pharmacy calculations, pharmacokinetics and dosing","Calculations, IV rates, PK, TDM, dose adjustment"],["B3","Cardiovascular disorders","Hypertension, IHD, heart failure, arrhythmias, lipids, thrombosis"],["B4","Endocrine, metabolic and nutrition disorders","Diabetes, obesity, thyroid, adrenal, bone health"],["B5","Respiratory, allergy and immunization","Asthma, COPD, allergy, smoking cessation, vaccines"],["B6","Infectious diseases and antimicrobial stewardship","Antibacterials, antivirals, common infections"],["B7","Renal, fluid, electrolyte and acid–base","Renal function, fluids, electrolytes, dialysis"],["B8","Gastrointestinal, hepatic and nutritional","Acid-related and bowel disease, liver, nutrition support"],["B9","Neurology, psychiatry, pain and substance use","Seizures, stroke, mood, psychosis, pain, dependence"],["B10","Oncology, haematology and supportive care","Chemotherapy, hazardous drugs, anaemia, coagulation"],["B11","Rheumatology, dermatology and self-care","Inflammatory disorders, skin, OTC triage"],["B12","Women's, men's and reproductive health","Contraception, genitourinary and sexual health"],["B13","Paediatrics, geriatrics, pregnancy and lactation","Age-related dosing, teratogenicity, deprescribing"],["B14","Emergency care, toxicology and integrated cases","Overdose and antidotes, emergencies, multimorbidity"],["N1","Biomedical science essentials","Physiology, biochemistry, microbiology, immunology"],["N2","Medicinal chemistry, pharmacology and drug development","Structures, SAR, metabolism, pharmacodynamics"],["N3","Pharmaceutics, biopharmaceutics and drug delivery","Dosage forms, stability, bioequivalence"],["N4","Compounding and pharmaceutical calculations","Sterile and non-sterile preparation, clean rooms"],["N5","Natural products and dietary supplements","Herbals, supplements, interactions, safety"],["N6","Saudi health system, public health and medication safety","Health care delivery, pharmacovigilance, dispensing"],["N7","Pharmacy law, ethics and professional practice","Saudi regulations, controlled drugs, ethics"],["N8","Research, biostatistics, pharmacoeconomics and management","Study design, statistics, pharmacoeconomics"]];
-const modCell=m=>`<td class="code">${m[0]}</td><td>${m[1]}<span class="desc">${m[2]}</span></td>`;
-const sel=(id,opts,ph='Select')=>`<select id="${id}" name="${id}" aria-label="${ph}"><option value="">—</option>${opts.map(o=>`<option>${esc(o)}</option>`).join('')}</select>`;
+const MOD=[["B1","Patient assessment, drug information and evidence","History, labs, drug-related problems, guidelines, counselling"],["B2","Pharmacy calculations, pharmacokinetics and dosing","Calculations, IV rates, PK, TDM, dose adjustment"],["B3","Cardiovascular disorders","Hypertension, IHD, heart failure, arrhythmias, lipids, thrombosis"],["B4","Endocrine, metabolic and nutrition disorders","Diabetes, obesity, thyroid, adrenal, bone health"],["B5","Respiratory, allergy and immunization","Asthma, COPD, allergy, smoking cessation, vaccines"],["B6","Infectious diseases and antimicrobial stewardship","Antibacterials, antivirals, common infections"],["B7","Renal, fluid, electrolyte and acid–base","Renal function, fluids, electrolytes, dialysis"],["B8","Gastrointestinal, hepatic and nutritional","Acid-related and bowel disease, liver, nutrition support"],["B9","Neurology, psychiatry, pain and substance use","Seizures, stroke, mood, psychosis, pain, dependence"],["B10","Oncology, haematology and supportive care","Chemotherapy, hazardous drugs, anaemia, coagulation"],["B11","Rheumatology, dermatology and self-care","Inflammatory disorders, skin, OTC triage"],["B12","Women's, men's and reproductive health","Contraception, genitourinary and sexual health"],["B13","Paediatrics, geriatrics, pregnancy and lactation","Age-related dosing, teratogenicity, deprescribing"],["B14","Emergency care, toxicology and integrated cases","Overdose and antidotes, emergencies, multimorbidity"],["N1","Biomedical science essentials","Physiology, biochemistry, microbiology, immunology"],["N2","Medicinal chemistry, pharmacology and drug development","Structures, SAR, metabolism, pharmacodynamics"],["N3","Pharmaceutics, biopharmaceutics and drug delivery","Dosage forms, stability, bioequivalence"],["N4","Compounding and pharmaceutical calculations","Sterile and non-sterile preparation, clean rooms"],["N5","Natural products and dietary supplements","Herbals, supplements, interactions, safety"],["N6","Saudi health system, public health and medication safety","Health care delivery, pharmacovigilance, dispensing"],["N7","Pharmacy law, ethics and professional practice","Saudi regulations, controlled drugs, ethics"],["N8","Research, biostatistics, pharmacoeconomics and management","Study design, statistics, pharmacoeconomics"]];
 const SECTIONS=["Basic Biomedical Sciences","Pharmaceutical Sciences","Social, Behavioral and Administrative Sciences","Clinical Sciences"];
 const SDESC=["Physiology, biochemistry, microbiology, immunology, genetics","Medicinal chemistry, pharmacology, pharmaceutics, PK, compounding, calculations","Health system, law, ethics, pharmacovigilance, biostatistics, pharmacoeconomics, management","Drug information, TDM, patient assessment, therapeutics, special populations"];
 const AGREE=["Strongly disagree","Disagree","Neutral","Agree","Strongly agree"];
 const USE5=["Not useful","Slightly","Moderately","Very","Extremely useful"];
+const FREQ=['Never','Rarely','Sometimes','Often','Very often'],DIFF=['Much easier than expected','Easier','As expected','Harder','Much harder than expected'];
 
-// A
+// ---------- Part A ----------
 let s=sec('A','About this survey');
 s.insertAdjacentHTML('beforeend',`<p>IAU College of Clinical Pharmacy is designing a preparation course for the Saudi Pharmacist Licensure Examination (SPLE). We are asking pharmacists who have already taken the SPLE to describe the exam as they experienced it and to compare two possible course designs.</p><p>The survey takes about 10 minutes. It is anonymous: we do not ask for your name, university ID or contact details, and results are reported only in aggregate. Participation is voluntary and you can stop at any time. There are no right or wrong answers.</p>`);
-single(s,'A1','I have read the information above and agree to take part.',['Yes','No']);
+single(s,'I have read the information above and agree to take part. <span class="req">(required)</span>',['Yes','No']); // Q1
 
-// B
+// ---------- Part B ----------
 s=sec('B','Your SPLE and preparation');
-single(s,'B1','When did you take the SPLE?',['2026','2025','2024','2023','2022']);
-single(s,'B2','How long did you prepare for the exam?',['Less than 1 month','1–2 months','3–4 months','More than 4 months']);
-multi(s,'B3','Which preparation resources did you use? Select all that apply.',['Commercial course, online','Commercial course, in person','University or college sessions','Recall question files','Question banks or apps','Textbooks or guidelines','Self-made or shared summaries','Study group','Other']);
+single(s,'When did you take the SPLE?',['2026','2025','2024','2023','2022']);
+single(s,'How long did you prepare for the exam?',['Less than 1 month','1–2 months','3–4 months','More than 4 months']);
+multi(s,'Which preparation resources did you use? Select all that apply.',['Commercial course, online','Commercial course, in person','University or college sessions','Recall question files','Question banks or apps','Textbooks or guidelines','Self-made or shared summaries','Study group','Other']);
 
-// C
+// ---------- Part C ----------
 s=sec('C','What the exam contained','Answer about what you actually saw in the exam, not what you think should be taught.');
-sumQ(s,'C1','Roughly what share of your exam questions came from each official section? Enter whole numbers that add up to 100.',SECTIONS.map((x,i)=>[x,SDESC[i]]));
-const FREQ=['Never','Rarely','Sometimes','Often','Very often'],DIFF=['Much easier than expected','Easier','As expected','Harder','Much harder than expected'];
-Q(s,'C2 · D1','For each module, answer two questions about your exam.',`<div class="scroll"><table><thead><tr><th>Code</th><th>Module</th><th>C2 · How often did you see it in the exam?</th><th>D1 · Difficulty compared with what you expected</th></tr></thead><tbody>${MOD.slice(1).map(m=>`<tr>${modCell(m)}<td>${sel('C2_'+m[0],FREQ,'How often seen')}</td><td>${sel('D1_'+m[0],DIFF,'Difficulty compared with expected')}</td></tr>`).join('')}</tbody></table></div>`,`<p class="note">If a question touched two modules, count it under the closest one. Leave D1 blank for modules you never saw.</p>`);
-Q(s,'C3','How often did you see each type of question?',matrix('C3',['Short question testing one fact (e.g., a drug class or a side effect)','Short clinical case (2–4 lines) with one best answer','Long clinical case (a paragraph or more)','Calculation question','Question combining two or more subjects','Law, ethics or professional-practice scenario','Question with a structure, table, graph or lab report to interpret'],['Never','Rarely','Sometimes','Often','Very often'],'Question type'));
-Q(s,'C4','How much do you agree with each statement about your exam?',matrix('C4',['Many questions could be answered by recalling a memorised fact.','Many questions asked for the most appropriate drug for a described patient (e.g., taking into account their other conditions, allergies or pregnancy).','Many questions had more than one option that seemed correct.','Drug mechanisms were asked less often than drug choice, ADRs and monitoring.','Time was enough to read and answer every question carefully.'],AGREE));
+(function(){const qs=SECTIONS.map(()=>nq());const lab='Roughly what share of your exam questions came from each official section? Enter whole numbers that add up to 100.';
+ Q(s,range(qs[0],qs[3]),lab,`<div class="sum">${SECTIONS.map((x,i)=>`<label for="${qs[i]}">${tag(qs[i])} ${x}<span class="d">${SDESC[i]}</span></label><input type="number" min="0" max="100" step="1" id="${qs[i]}" name="${qs[i]}" data-sum="C1" data-q="${qs[i]}" data-cb="${esc('Section share (%) — '+x)}" data-opts="0–100" inputmode="numeric">`).join('')}<span>Total</span><span class="total" id="C1_tot">0 / 100</span></div>`)})();
+(function(){const first=N+1;const rows=MOD.map(m=>{const a=nq(),b=nq();return `<tr>${`<td class="code">${m[0]}</td><td>${m[1]}<span class="desc">${m[2]}</span></td>`}<td>${tag(a)} ${sel(a,FREQ,'How often seen — '+m[0]+' '+m[1])}</td><td>${tag(b)} ${sel(b,DIFF,'Difficulty vs expected — '+m[0]+' '+m[1])}</td></tr>`}).join('');
+ Q(s,range('Q'+first,'Q'+N),'For each module, answer two questions about your exam.',`<div class="scroll"><table><thead><tr><th>Code</th><th>Module</th><th>How often did you see it in the exam?</th><th>Difficulty compared with what you expected</th></tr></thead><tbody>${rows}</tbody></table></div>`,`<p class="note">If a question touched two modules, count it under the closest one. Leave the difficulty column blank for modules you never saw.</p>`)})();
 
+// ---------- Part D ----------
+s=sec('D','What a course should emphasise','Now answer about what you think a preparation course should do, which may differ from what you saw.');
+(function(){const opts=MOD.map(m=>m[0]+' · '+m[1]);const qs=[1,2,3,4,5].map(()=>nq());
+ Q(s,range(qs[0],qs[4]),'Rank the five modules where a course would help candidates most.',`<div class="rank">${qs.map((q,i)=>`<label for="${q}">${tag(q)} Rank ${i+1}${i===0?' (most helpful)':''}</label>${sel(q,opts,'Top-5 module, rank '+(i+1))}`).join('')}</div>`)})();
 
-// E
-s=sec('E','What a course should emphasise','Now answer about what you think a preparation course should do, which may differ from what you saw.');
-const modOpts=MOD.map(m=>m[0]+' · '+m[1]);
-Q(s,'E2','Rank the five modules where a course would help candidates most.',`<div class="rank">${[1,2,3,4,5].map(r=>`<label for="E2_${r}">Rank ${r}${r===1?' (most helpful)':''}</label>${sel('E2_'+r,modOpts,'Rank '+r)}`).join('')}</div>`);
-
-// F
-s=sec('F','Two preparation models','You are about to review two models for an SPLE preparation course. Please read the characteristics and examples of each model carefully, then tell us which one you prefer.');
+// ---------- Part E ----------
+s=sec('E','Two preparation models','You are about to review two models for an SPLE preparation course. Please read the characteristics and examples of each model carefully, then tell us which one you prefer.');
 const ROWS=[["How it is organised","By subject, with more time for subjects that are frequent or difficult","By the tasks a pharmacist performs, with subjects mixed inside patient cases"],["Start","Diagnostic test, scored by subject","Diagnostic test, scored by competency"],["Stage 1","Foundations: calculations, pharmacokinetics, medicinal chemistry, pharmaceutics, law and ethics","Assessing the patient: labs, physiology applied in cases, drug information, PK basics"],["Stage 2","Major therapeutics: cardiovascular, endocrine, respiratory, infections","Choosing therapy: first-line, alternatives, special populations"],["Stage 3","Other therapeutics; health system, biostatistics, pharmacoeconomics; shorter topics in review sessions","Preparing and dispensing safely: compounding, calculations, medication safety, law and ethics scenarios"],["Final stage","Review of calculations, laws and the question bank; full mock exam","Mixed multi-subject cases in timed blocks; full mock exam"],["Example session","<b>Hypertension.</b> A focused review of guideline targets, first-line drug classes, common and serious ADRs, and monitoring. Then a 20-question quiz on hypertension only.","<b>A 68-year-old woman with diabetes, kidney disease (eGFR 35) and new atrial fibrillation.</b> In one session: read her labs, calculate a renally adjusted dose, choose an anticoagulant, check interactions, and plan counselling."],["Example practice question","“Which drug class is first-line for hypertension in a patient with diabetes and albuminuria?”","“Which anticoagulant and dose is most appropriate for this patient?” (needs labs, calculation and therapy together)"],["Progress report","Score by subject, e.g. Cardiovascular 72%, Law 55%","Score by competency, e.g. Choosing therapy 70%, Safe dispensing 58%"]];
-const swap=Math.random()<0.5; // randomised column order, as in the live survey
+const swap=Math.random()<0.5; // randomised column order
 const L=swap?['Model B','Model A']:['Model A','Model B'];
 const col=r=>swap?[r[2],r[1]]:[r[1],r[2]];
-s.insertAdjacentHTML('beforeend',`<div class="models"><div class="rh blank"></div><div class="mh">${L[0]}</div><div class="mh">${L[1]}</div>${ROWS.map(r=>{const c=col(r),ex=r[0].startsWith('Example')?' ex':'';return `<div class="rh">${r[0]}</div><div class="${ex.trim()}" data-m="${L[0]}">${c[0]}</div><div class="${ex.trim()}" data-m="${L[1]}">${c[1]}</div>`}).join('')}</div><p class="note">Column order is randomised for each respondent.</p>`);
+s.insertAdjacentHTML('beforeend',`<div class="models"><div class="rh blank"></div><div class="mh">${L[0]}</div><div class="mh">${L[1]}</div>${ROWS.map(r=>{const c=col(r),ex=r[0].startsWith('Example')?'ex':'';return `<div class="rh">${r[0]}</div><div class="${ex}" data-m="${L[0]}">${c[0]}</div><div class="${ex}" data-m="${L[1]}">${c[1]}</div>`}).join('')}</div>`);
 const STM=['Reflects the actual SPLE more closely','Would better prepare future candidates to pass','Better covers the areas candidates find most difficult','Has a more manageable workload for candidates','Better prepares candidates for questions that combine subjects','Overall, the course I would recommend to future candidates'];
-Q(s,'F1','Based on your own SPLE experience, think about future candidates. For each statement, move the slider toward the model that fits it better. Far left = 100% '+L[0]+', far right = 100% '+L[1]+', middle = 50/50.',`<div class="sls">${STM.map((t,i)=>`<div class="sl"><div class="left"><div class="st">${t}</div><div class="pct"><span class="pa"><b>${L[0]}</b> <em id="F1_${i}_a">50%</em></span><span class="pb"><b>${L[1]}</b> <em id="F1_${i}_b">50%</em></span></div></div><div class="right"><input type="range" id="F1_${i}" name="F1_${i}" min="0" max="100" step="10" value="50" data-sl aria-label="${esc(t)}: share for ${L[1]}"><div class="ends"><span>100% ${L[0]}</span><span>50 / 50</span><span>100% ${L[1]}</span></div><div class="read" id="F1_${i}_r">Not answered yet</div></div></div>`).join('')}</div>`);
-F.addEventListener('input',e=>{if(e.target.dataset.sl===undefined)return;e.target.dataset.touched='1';const b=+e.target.value,a=100-b;document.getElementById(e.target.id+'_a').textContent=a+'%';document.getElementById(e.target.id+'_b').textContent=b+'%';document.getElementById(e.target.id+'_r').textContent='Answered';});
+(function(){const qs=STM.map(()=>nq());
+ Q(s,range(qs[0],qs[5]),'Based on your own SPLE experience, think about future candidates. For each statement, move the slider toward the model that fits it better. Far left = 100% '+L[0]+', far right = 100% '+L[1]+', middle = 50/50.',`<div class="sls">${STM.map((t,i)=>{const q=qs[i];return `<div class="sl"><div class="left"><div class="st">${tag(q)} ${t}</div><div class="pct"><span><b>${L[0]}</b> <em id="${q}_a">50%</em></span><span><b>${L[1]}</b> <em id="${q}_b">50%</em></span></div></div><div class="right"><input type="range" id="${q}" name="${q}" min="0" max="100" step="10" value="50" data-sl data-q="${q}" data-cb="${esc('Model slider — '+t+' (value = % for Model B; Model A = 100 minus value)')}" data-opts="0–100" aria-label="${esc(t)}"><div class="ends"><span>100% ${L[0]}</span><span>50 / 50</span><span>100% ${L[1]}</span></div><div class="read" id="${q}_r">Not answered yet</div></div></div>`}).join('')}</div>`)})();
+F.addEventListener('input',e=>{if(e.target.dataset.sl===undefined)return;e.target.dataset.touched='1';const b=+e.target.value;document.getElementById(e.target.id+'_a').textContent=(100-b)+'%';document.getElementById(e.target.id+'_b').textContent=b+'%';document.getElementById(e.target.id+'_r').textContent='Answered';});
 
-// G
-s=sec('G','Preparation preferences');
-single(s,'G1','How useful would a diagnostic test at the start of the course be for finding your knowledge gaps?',USE5);
-single(s,'G2','After the diagnostic test, how would you prefer to study?',['The same plan as everyone','A personalised plan based on my results','A shared plan plus personalised extra practice']);
-Q(s,'G3','How useful would each of these be during the course?',matrix('G3',['Live sessions with faculty','Open Q&amp;A chat sessions with faculty','Online discussion forum'],USE5,'Format'));
-const g6=multi(s,'G6','Which activities should the final two weeks include? Select up to three.',['Full mock exams','Recall-style question practice','Calculation drills','Law and ethics review','High-yield summary review','Faculty-led Q&A sessions','Study-group sessions','Targeted revision of weak areas']);
-g6.insertAdjacentHTML('beforeend','<p class="note" id="G6_msg" aria-live="polite"></p>');
-F.addEventListener('change',e=>{if(e.target.name==='G6'){const on=[...F.querySelectorAll('input[name=G6]:checked')];if(on.length>3){e.target.checked=false;document.getElementById('G6_msg').textContent='You can select up to three.'}else document.getElementById('G6_msg').textContent=''}});
-single(s,'G10','How long should the full preparation course run?',['2 weeks','4 weeks','6 weeks','8 weeks','3 months or more']);
-Q(s,'G11','How much would you be willing to pay for this SPLE preparation course?',`<div class="sl" style="grid-template-columns:minmax(0,1fr) minmax(0,1.3fr)"><div class="left"><div class="pct"><span><b>Your answer</b> <em id="G11_v">Not answered yet</em></span></div></div><div class="right"><input type="range" id="G11" name="G11" min="250" max="3000" step="50" value="1625" data-price aria-label="Amount in Saudi riyals"><div class="ends"><span>SAR 250</span><span>SAR 1,625</span><span>SAR 3,000</span></div></div></div>`);
-F.addEventListener('input',e=>{if(e.target.id!=='G11')return;e.target.dataset.touched='1';document.getElementById('G11_v').textContent='SAR '+(+e.target.value).toLocaleString('en-US');});
+// ---------- Part F ----------
+s=sec('F','Preparation preferences');
+single(s,'How useful would a diagnostic test at the start of the course be for finding your knowledge gaps?',USE5);
+single(s,'After the diagnostic test, how would you prefer to study?',['The same plan as everyone','A personalised plan based on my results','A shared plan plus personalised extra practice']);
+matrix(s,'How useful would each of these be during the course?',['Live sessions with faculty','Open Q&amp;A chat sessions with faculty','Online discussion forum'],['Not useful','Somewhat useful','Very useful'],'Format');
+const capQ='Q'+(N+1);
+const cap=multi(s,'Which activities should the final two weeks include? Select up to three.',['Full mock exams','Recall-style question practice','Calculation drills','Law and ethics review','High-yield summary review','Faculty-led Q&A sessions','Study-group sessions','Targeted revision of weak areas']);
+cap.insertAdjacentHTML('beforeend','<p class="note" id="cap_msg" aria-live="polite"></p>');
+F.addEventListener('change',e=>{if(e.target.name===capQ){const on=F.querySelectorAll(`input[name="${capQ}"]:checked`);if(on.length>3){e.target.checked=false;document.getElementById('cap_msg').textContent='You can select up to three.'}else document.getElementById('cap_msg').textContent=''}});
+single(s,'How long should the full preparation course run?',['2 weeks','4 weeks','6 weeks','8 weeks','3 months or more']);
+(function(){const q=nq();Q(s,q,'How much would you be willing to pay for this SPLE preparation course?',`<div class="sl"><div class="left"><div class="pct"><span><b>Your answer</b> <em id="${q}_v">Not answered yet</em></span></div></div><div class="right"><input type="range" id="${q}" name="${q}" min="250" max="3000" step="50" value="1625" data-price data-q="${q}" data-cb="Willingness to pay (SAR)" data-opts="250–3000" aria-label="Amount in Saudi riyals"><div class="ends"><span>SAR 250</span><span>SAR 1,625</span><span>SAR 3,000</span></div></div></div>`);
+ F.addEventListener('input',e=>{if(e.target.id!==q)return;e.target.dataset.touched='1';document.getElementById(q+'_v').textContent='SAR '+(+e.target.value).toLocaleString('en-US');});})();
 
-// H
-s=sec('H','Final comment (optional)');
-Q(s,'H1','Is there anything you would like to add to improve the proposed SPLE preparation program?','<textarea id="H1" name="H1" aria-label="Optional comment"></textarea>');
+// ---------- Part G ----------
+s=sec('G','Final comment (optional)');
+(function(){const q=nq();Q(s,q,'Is there anything you would like to add to improve the proposed SPLE preparation program?',`<textarea id="${q}" name="${q}" data-q="${q}" data-cb="Optional comment" data-opts="Free text" aria-label="Optional comment"></textarea>`)})();
 
-F.insertAdjacentHTML('beforeend','<button class="btn" type="submit" id="submitBtn">Submit survey</button>');
+// ---------- navigation ----------
+F.insertAdjacentHTML('beforeend',`<div class="nav"><button type="button" class="btn ghost" id="backBtn">Back</button><span class="spacer"></span><p class="note" id="navMsg" aria-live="polite"></p><button type="button" class="btn" id="nextBtn">Next</button><button type="submit" class="btn" id="submitBtn">Submit survey</button></div>`);
+const back=document.getElementById('backBtn'),next=document.getElementById('nextBtn'),sub=document.getElementById('submitBtn'),msg=document.getElementById('navMsg');
+let cur=0;
+const consent=()=>{const c=F.querySelector('input[name=Q1]:checked');return c?c.value:null};
+function show(i,scroll=true){
+ cur=i;PAGES.forEach((p,k)=>p.hidden=k!==i);msg.textContent='';
+ back.hidden=i===0;
+ const declined=i===0&&consent()==='No', last=i===PAGES.length-1;
+ next.hidden=last||declined; sub.hidden=!(last||declined);
+ next.disabled=i===0&&!consent();
+ document.getElementById('pct').textContent=`Part ${PAGES[i].dataset.part} of ${PAGES[PAGES.length-1].dataset.part}`;
+ document.getElementById('barfill').style.width=Math.round((i+1)/PAGES.length*100)+'%';
+ if(scroll)window.scrollTo({top:0,behavior:'smooth'});
+}
+F.addEventListener('change',e=>{if(e.target.name==='Q1')show(0,false)});
+next.addEventListener('click',()=>{if(cur===0&&!consent()){msg.textContent='Please answer Q1 to continue.';return}show(cur+1)});
+back.addEventListener('click',()=>{if(cur>0)show(cur-1)});
 
-// constant-sum totals
-F.addEventListener('input',e=>{const k=e.target.dataset&&e.target.dataset.sum;if(!k)return;const t=[...F.querySelectorAll(`[data-sum="${k}"]`)].reduce((a,x)=>a+(parseInt(x.value,10)||0),0);const el=document.getElementById(k+'_tot');el.textContent=t+' / 100';el.className='total '+(t===100?'good':t>0?'bad':'')});
-
-// progress: share of answerable units touched
-function units(){const names=new Set();F.querySelectorAll('input[type=radio],input[type=checkbox]').forEach(i=>names.add(i.name));const sels=[...F.querySelectorAll('select')];const nums=new Set([...F.querySelectorAll('[data-sum]')].map(x=>x.dataset.sum));
- let total=names.size+sels.length+nums.size,done=0;names.forEach(n=>{if(F.querySelector(`input[name="${n}"]:checked`))done++});sels.forEach(x=>{if(x.value)done++});nums.forEach(k=>{if([...F.querySelectorAll(`[data-sum="${k}"]`)].some(x=>x.value))done++});const sls=[...F.querySelectorAll('[data-sl],[data-price]')];total+=sls.length;done+=sls.filter(x=>x.dataset.touched).length;return Math.round(done/total*100)}
-const upd=()=>{const p=units();document.getElementById('pct').textContent=p+'% answered';document.getElementById('barfill').style.width=p+'%'};
-F.addEventListener('change',upd);F.addEventListener('input',upd);
+// constant-sum total
+F.addEventListener('input',e=>{if(e.target.dataset.sum!=='C1')return;const t=[...F.querySelectorAll('[data-sum="C1"]')].reduce((a,x)=>a+(parseInt(x.value,10)||0),0);const el=document.getElementById('C1_tot');el.textContent=t+' / 100';el.className='total '+(t===100?'good':t>0?'bad':'')});
 
 function collect(){
  const d={submitted_at:new Date().toISOString(),model_left_column:L[0]};
+ for(let i=1;i<=N;i++)d['Q'+i]='';
  F.querySelectorAll('input,select,textarea').forEach(el=>{
-  if(!el.name)return;
-  if(el.type==='radio'){if(el.checked)d[el.name]=el.value;else if(!(el.name in d))d[el.name]='';return}
-  if(el.type==='checkbox'){const v=[...F.querySelectorAll(`input[name="${el.name}"]:checked`)].map(x=>x.value).join('; ');d[el.name]=v;return}
-  if(el.type==='range'){
-   if(!el.dataset.touched){d[el.name]='';return}
-   const v=+el.value;
-   if(el.dataset.sl!==undefined){d[el.name+'_pctModelB']=(L[1]==='Model B')?v:100-v}else d[el.name]=v;
-   return}
-  d[el.name||el.id]=el.value;
+  const k=el.name;if(!k||!/^Q\d+$/.test(k))return;
+  if(el.type==='radio'){if(el.checked)d[k]=el.value;return}
+  if(el.type==='checkbox'){d[k]=[...F.querySelectorAll(`input[name="${k}"]:checked`)].map(x=>x.value).join('; ');return}
+  if(el.type==='range'){if(!el.dataset.touched)return;const v=+el.value;d[k]=el.dataset.sl!==undefined?((L[1]==='Model B')?v:100-v):v;return}
+  d[k]=el.value;
  });
- F.querySelectorAll('input[type=number][data-sum]').forEach(el=>{d[el.id]=el.value});
  return d;
 }
+const send=data=>ENDPOINT?Promise.race([fetch(ENDPOINT,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(data)}),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),20000))]):Promise.resolve();
 F.addEventListener('submit',async e=>{
  e.preventDefault();
- const consent=F.querySelector('input[name=A1]:checked');
- const btn=document.getElementById('submitBtn');
- if(!consent){consentMsg('Please answer A1 (consent) before submitting.');return}
- const done=document.getElementById('done');
- if(consent.value==='No'){F.hidden=true;document.getElementById('doneMsg').textContent='Thank you for your time. No answers were recorded.';done.hidden=false;return}
- btn.disabled=true;btn.textContent='Submitting…';
+ const c=consent();
+ if(!c){show(0);msg.textContent='Please answer Q1 first.';return}
+ let data;if(c==='No'){data={submitted_at:new Date().toISOString(),model_left_column:'',Q1:'No'}}else data=collect();
+ sub.disabled=true;back.disabled=true;sub.textContent='Submitting…';msg.textContent='';
  try{
-  if(ENDPOINT){await Promise.race([fetch(ENDPOINT,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(collect())}),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),20000))])}
-  F.hidden=true;done.hidden=false;done.scrollIntoView({behavior:'smooth'});
- }catch(err){btn.disabled=false;btn.textContent='Submit survey';consentMsg('Your response could not be sent. Check your connection and press Submit again.')}
+  await send(data);
+  F.hidden=true;document.getElementById('progressWrap').hidden=true;
+  document.getElementById('doneMsg').textContent='Your response has been recorded. Thank you for your time; you can now close this page.';
+  document.getElementById('done').hidden=false;window.scrollTo({top:0,behavior:'smooth'});
+ }catch(err){sub.disabled=false;back.disabled=false;sub.textContent='Submit survey';msg.textContent='Your response could not be sent. Check your connection and press Submit again.'}
 });
-function consentMsg(t){let m=document.getElementById('submitMsg');if(!m){m=document.createElement('p');m.id='submitMsg';m.className='note';m.setAttribute('aria-live','polite');F.appendChild(m)}m.textContent=t}
 if(!ENDPOINT)document.getElementById('previewNote').hidden=false;
+show(0,false);
+window.__SURVEY_N=N;
 })();
 </script>
 </body>
